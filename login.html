@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login • CCO</title>
+
+  <link rel="stylesheet" href="login.css">
+</head>
+
+<body>
+
+  <main class="login-container">
+
+    <section class="login-info">
+      <div class="brand">
+        <img src="/Assets/logo.png" alt="CCO" class="logo-img">
+
+        <div>
+          <h1>CCO</h1>
+          <p>Intranet Executiva</p>
+        </div>
+      </div>
+
+      <div class="info-text">
+        <h2>Gestão operacional com visão executiva.</h2>
+        <p>
+          Acompanhe indicadores, execução contratual, produtividade,
+          planilhas importadas e resultados dos serviços P1 a P12.
+        </p>
+      </div>
+
+      <div class="info-tags">
+        <span>Painel Executivo</span>
+        <span>Indicadores</span>
+        <span>KPI</span>
+      </div>
+    </section>
+
+    <section class="login-card">
+      <span class="eyebrow">Acesso restrito</span>
+
+      <h2>Entrar no sistema</h2>
+
+      <p>Informe seu usuário e senha para acessar a intranet.</p>
+
+      <div class="input-group">
+        <label for="usuario">Usuário</label>
+
+        <div class="input-box">
+          <span>👤</span>
+          <input
+            type="text"
+            id="usuario"
+            placeholder="Digite seu usuário"
+            autocomplete="username"
+          >
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label for="senha">Senha</label>
+
+        <div class="input-box">
+          <span>🔒</span>
+          <input
+            type="password"
+            id="senha"
+            placeholder="Digite sua senha"
+            autocomplete="current-password"
+          >
+        </div>
+      </div>
+
+      <div class="login-options">
+        <label>
+          <input type="checkbox" id="lembrarUsuario">
+          Lembrar usuário
+        </label>
+
+        <span>CCO</span>
+      </div>
+
+      <button class="login-btn" onclick="entrar()">
+        Acessar painel
+      </button>
+
+      <div id="erro" class="erro"></div>
+
+      <div class="users-help">
+        <strong>Usuários de teste:</strong><br>
+        admin / 123456<br>
+        cco / 1234<br>
+        diretoria / 2025
+      </div>
+    </section>
+
+  </main>
+
+  <script src="login.js"></script>
+</body>
+</html>

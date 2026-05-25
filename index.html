@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Intranet Executiva KPI CCO</title>
+
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Biblioteca para leitura de Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- Biblioteca para gráficos -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+  <div class="layout">
+
+    <!-- MENU LATERAL -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">CCO</div>
+        <div>
+          <h2>ÍNDICE DE EFICIÊNCIA OPERACIONAL</h2>
+          <p>Painel Executivo</p>
+        </div>
+      </div>
+
+      <div class="sidebar-text">
+        Gestão executiva dos indicadores operacionais, contratuais e KPI’s dos serviços P1 a P12.
+      </div>
+
+      <nav class="menu">
+        <button class="active" onclick="mostrarTela('executivo', this)">Painel Executivo</button>
+        <button onclick="mostrarTela('contrato', this)">Execução P1 a P12</button>
+
+        <!-- ACESSO RESTRITO: Diretoria não visualiza este botão -->
+        <button id="menuKpi" onclick="mostrarTela('kpi', this)">KPI's</button>
+
+        <button onclick="mostrarTela('dados', this)">Base Importada</button>
+        <button class="logout" onclick="sair()">Sair</button>
+      </nav>
+    </aside>
+
+    <!-- CONTEÚDO PRINCIPAL -->
+    <main class="content">
+
+      <!-- TOPO -->
+      <header class="topbar">
+        <div>
+          <span class="eyebrow">Centro de Controle Operacional</span>
+          <h1>Intranet Executiva de KPI’s</h1>
+          <p>
+            Consolidação dos indicadores de limpeza urbana, execução contratual,
+            produtividade, volume operacional e respostas executivas por serviço.
+          </p>
+        </div>
+
+        <div class="top-actions">
+          <div class="date-box" id="dataAtual"></div>
+
+          <!-- ACESSO RESTRITO: Diretoria não visualiza importar -->
+          <label class="file-label" id="btnImportar">
+            Importar planilhas
+            <input type="file" id="arquivoExcel" accept=".xlsx,.xls,.csv" multiple />
+          </label>
+
+          <!-- ACESSO RESTRITO: Diretoria não visualiza exportar -->
+          <button id="btnExportar" class="btn secondary" onclick="window.print()">Exportar PDF</button>
+
+          <!-- ACESSO RESTRITO: Diretoria não visualiza limpar -->
+          <button id="btnLimpar" class="btn danger" onclick="limparBanco()">Limpar dados</button>
+
+          <div class="file-status" id="nomeArquivo">Nenhuma planilha importada</div>
+        </div>
+      </header>
+
+      <!-- LOADING -->
+      <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-box">
+          <div class="spinner"></div>
+          <strong>Processando planilha...</strong>
+          <span>Aguarde enquanto os dados são analisados.</span>
+        </div>
+      </div>
+
+      <!-- PAINEL EXECUTIVO -->
+      <section id="tela-executivo" class="tela ativa">
+
+        <!-- FILTRO -->
+        <section class="filter-panel">
+          <div class="filter-card">
+            <div>
+              <span>Filtro operacional</span>
+              <h3>Selecionar data</h3>
+            </div>
+
+            <input type="date" id="filtroDia" onchange="aplicarFiltroPeriodo()" />
+
+            <button class="clear-filter" onclick="limparFiltroPeriodo()" title="Limpar filtro">
+              ✕
+            </button>
+          </div>
+        </section>
+
+        <!-- CARDS SEM CARD DE VALOR -->
+        <section class="cards">
+          <div class="card">
+            <span>Serviços com dados</span>
+            <strong id="kpiServicosDados">0</strong>
+            <small>P1 a P12</small>
+          </div>
+
+          <div class="card">
+            <span>Média de execução</span>
+            <strong id="kpiExecucaoMedia">0%</strong>
+            <small>máximo 100%</small>
+          </div>
+
+          <div class="card">
+            <span>Abas importadas</span>
+            <strong id="kpiAbas">0</strong>
+            <small>planilhas processadas</small>
+          </div>
+        </section>
+
+        <!-- GRÁFICOS -->
+        <section class="grid-2">
+          <div class="section chart-card">
+            <div class="section-title">
+              <span>Indicador</span>
+              <h2>Execução por Serviço</h2>
+            </div>
+            <canvas id="graficoExecucao"></canvas>
+          </div>
+
+          <div class="section chart-card">
+            <div class="section-title">
+              <span>Produção</span>
+              <h2>Pizza - Acumulado por Serviço</h2>
+            </div>
+            <canvas id="graficoAcumulado"></canvas>
+          </div>
+        </section>
+
+        <!-- RESUMO E ALERTAS -->
+        <section class="grid-2">
+          <div class="section">
+            <div class="section-title">
+              <span>Resumo</span>
+              <h2>Resumo Executivo</h2>
+            </div>
+            <div class="metric-list" id="resumoExecutivo"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">
+              <span>Monitoramento</span>
+              <h2>Alertas Executivos</h2>
+            </div>
+            <div id="alertasExecutivos" class="metric-list"></div>
+          </div>
+        </section>
+
+        <!-- TABELA PAINEL -->
+        <section class="section">
+          <div class="section-title">
+            <span>Tabela oficial</span>
+            <h2>Painel Executivo</h2>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Serviço</th>
+                  <th>Nome Serviço</th>
+                  <th>Acumulado no Mês</th>
+                  <th>1ª Semana</th>
+                  <th>2ª Semana</th>
+                  <th>3ª Semana</th>
+                  <th>4ª Semana</th>
+                  <th>Medição</th>
+                  <th>Previsto Mês</th>
+                  <th>% Execução</th>
+                  <th>Valor</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="tabelaPainelExecutivo"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- RESPOSTA RÁPIDA -->
+        <section class="section">
+          <div class="section-title">
+            <span>Consulta rápida</span>
+            <h2>Resposta para Diretoria</h2>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pergunta KPI</th>
+                  <th>Resposta</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="tabelaPerguntas"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <!-- EXECUÇÃO P1 A P12 -->
+      <section id="tela-contrato" class="tela">
+        <div class="section">
+          <div class="section-title">
+            <span>Execução contratual</span>
+            <h2>Serviços P1 a P12</h2>
+          </div>
+
+          <p class="section-description">
+            Selecione um serviço para visualizar os dados detalhados da respectiva aba da planilha.
+          </p>
+
+          <div class="tabs-servicos">
+            <button class="servico-btn active" onclick="mostrarServico('geral', this)">Geral<br><small>Consolidado</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P1', this)">P1<br><small>Coleta Orgânica</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P2.1', this)">P2.1<br><small>Coleta Seletiva</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P2.2', this)">P2.2<br><small>Rejeito Seletivo</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P3', this)">P3<br><small>Remoção Manual</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P4', this)">P4<br><small>Remoção Mecanizada</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P5', this)">P5<br><small>Varrição Manual</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P6', this)">P6<br><small>Varrição Mecanizada</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P7', this)">P7<br><small>Lavagem de Vias</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P8', this)">P8<br><small>Limpeza de Bens</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P9', this)">P9<br><small>Catação</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P10', this)">P10<br><small>Pintura Mecanizada</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P11', this)">P11<br><small>Pós-eventos/Gordura</small></button>
+            <button class="servico-btn" onclick="mostrarServico('P12', this)">P12<br><small>Transbordo</small></button>
+          </div>
+
+          <div id="servico-geral" class="servico-painel ativa">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Programa</th>
+                    <th>KPI</th>
+                    <th>Previsto</th>
+                    <th>Executado</th>
+                    <th>Índice</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="tabelaContratual"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div id="servico-detalhe" class="servico-painel">
+            <div id="detalheServico"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PÁGINA KPI'S -->
+      <!-- ACESSO RESTRITO: Diretoria não visualiza esta página -->
+      <section id="tela-kpi" class="tela">
+        <div class="section">
+          <div class="section-title">
+            <span>Indicadores operacionais</span>
+            <h2>KPI's por Serviço</h2>
+          </div>
+
+          <p class="section-description">
+            Selecione um serviço para visualizar as perguntas, respostas e fórmulas dos KPI’s.
+          </p>
+
+          <div class="tabs-servicos">
+            <button class="servico-btn active" onclick="mostrarKPI('geral', this)">Geral<br><small>Indicadores</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P1', this)">P1<br><small>Coleta Orgânica</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P2.1', this)">P2.1<br><small>Coleta Seletiva</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P2.2', this)">P2.2<br><small>Rejeito Seletivo</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P3', this)">P3<br><small>Remoção Manual</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P4', this)">P4<br><small>Remoção Mecanizada</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P5', this)">P5<br><small>Varrição Manual</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P6', this)">P6<br><small>Varrição Mecanizada</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P7', this)">P7<br><small>Lavagem de Vias</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P8', this)">P8<br><small>Limpeza de Bens</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P9', this)">P9<br><small>Catação</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P10', this)">P10<br><small>Pintura Mecanizada</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P11', this)">P11<br><small>Pós-eventos/Gordura</small></button>
+            <button class="servico-btn" onclick="mostrarKPI('P12', this)">P12<br><small>Transbordo</small></button>
+          </div>
+
+          <div id="conteudoKPI"></div>
+        </div>
+      </section>
+
+      <!-- BASE IMPORTADA -->
+      <section id="tela-dados" class="tela">
+        <div class="section">
+          <div class="section-title">
+            <span>Conferência</span>
+            <h2>Base Importada</h2>
+          </div>
+
+          <div class="filtros">
+            <input id="busca" placeholder="Buscar na base..." oninput="renderTabelaDados()" />
+
+            <select id="filtroPrograma" onchange="renderTabelaDados()">
+              <option>Todos</option>
+            </select>
+
+            <select id="filtroStatus" onchange="renderTabelaDados()">
+              <option>Todos</option>
+            </select>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Serviço</th>
+                  <th>Origem</th>
+                  <th>Data</th>
+                  <th>Turno</th>
+                  <th>RA</th>
+                  <th>Peso</th>
+                  <th>Viagens</th>
+                  <th>KM</th>
+                  <th>Equipe</th>
+                </tr>
+              </thead>
+              <tbody id="tabelaDados"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        Intranet KPI CCO • Serviço de Limpeza Urbana • Valor Ambiental
+      </footer>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+
+  <!-- ========================================================= -->
+  <!-- ACESSO RESTRITO PARA DIRETORIA -->
+  <!-- Diretoria apenas visualiza as informações -->
+  <!-- Não visualiza: importar, exportar, limpar e página KPI -->
+  <!-- ========================================================= -->
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
+
+      if (!usuarioLogado) {
+        window.location.href = "login.html";
+        return;
+      }
+
+      if (usuarioLogado.perfil === "Diretoria") {
+        esconderElementoDiretoria("btnImportar");
+        esconderElementoDiretoria("btnExportar");
+        esconderElementoDiretoria("btnLimpar");
+        esconderElementoDiretoria("menuKpi");
+        esconderElementoDiretoria("tela-kpi");
+
+        const botaoPainel = document.querySelector(".menu button");
+        const telaExecutivo = document.getElementById("tela-executivo");
+
+        document.querySelectorAll(".tela").forEach(function (tela) {
+          tela.classList.remove("ativa");
+        });
+
+        if (telaExecutivo) {
+          telaExecutivo.classList.add("ativa");
+        }
+
+        document.querySelectorAll(".menu button").forEach(function (botao) {
+          botao.classList.remove("active");
+        });
+
+        if (botaoPainel) {
+          botaoPainel.classList.add("active");
+        }
+      }
+    });
+
+    function esconderElementoDiretoria(id) {
+      const elemento = document.getElementById(id);
+
+      if (elemento) {
+        elemento.style.display = "none";
+        elemento.disabled = true;
+      }
+    }
+  </script>
+</body>
+</html>
