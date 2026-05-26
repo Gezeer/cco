@@ -1,9 +1,17 @@
 /*
 ========================================================
 INTRANET EXECUTIVA KPI CCO • SLU
+Arquivo JS completo com:
+- Importação de planilhas Excel
+- Leitura das abas P1 a P12
+- Espelho da planilha
+- Datas e horas no padrão brasileiro
 ========================================================
 */
 
+/* =====================================================
+   VALORES FIXOS DOS SERVIÇOS
+===================================================== */
 const VALORES_FIXOS = {
   "P1": 296.00,
   "P2.1": 1027.42,
@@ -20,8 +28,12 @@ const VALORES_FIXOS = {
   "P12": 0.83
 };
 
+/* Serviços que usam apenas valor fixo */
 const SERVICOS_FIXOS = ["P3", "P7", "P8", "P9", "P10"];
 
+/* =====================================================
+   VARIÁVEIS GLOBAIS
+===================================================== */
 let painelExecutivo = [];
 let painelExecutivoOriginal = [];
 let operacoes = [];
@@ -31,17 +43,23 @@ let todasAsAbas = [];
 let graficoExecucao = null;
 let graficoPizza = null;
 
-/* INICIALIZAÇÃO */
+/* =====================================================
+   INICIALIZAÇÃO
+===================================================== */
 document.addEventListener("DOMContentLoaded", () => {
   atualizarData();
 
   const input = document.getElementById("arquivoExcel");
-  if (input) input.addEventListener("change", importarPlanilhas);
+  if (input) {
+    input.addEventListener("change", importarPlanilhas);
+  }
 
   mostrarKPI("geral");
 });
 
-// Controle de acesso por perfil
+/* =====================================================
+   CONTROLE DE ACESSO POR PERFIL
+===================================================== */
 document.addEventListener("DOMContentLoaded", () => {
   const usuarioLogado = JSON.parse(localStorage.getItem("usuarioLogado"));
 
@@ -52,39 +70,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const perfil = usuarioLogado.perfil;
 
-  // Diretoria: somente visualização
   if (perfil === "Diretoria") {
-    // Esconde botões de ação
     esconderElemento("btnImportar");
     esconderElemento("btnLimpar");
     esconderElemento("btnExportar");
     esconderElemento("btnImplantar");
-
-    // Esconde página/menu KPI
     esconderElemento("menuKpi");
     esconderElemento("paginaKpi");
-
-    // Bloqueia qualquer botão perigoso por segurança
     bloquearBotoesDiretoria();
   }
 });
 
 function esconderElemento(id) {
   const elemento = document.getElementById(id);
-  if (elemento) {
-    elemento.style.display = "none";
-  }
+  if (elemento) elemento.style.display = "none";
 }
 
 function bloquearBotoesDiretoria() {
-  const botoesBloqueados = [
-    "btnImportar",
-    "btnLimpar",
-    "btnExportar",
-    "btnImplantar"
-  ];
-
-  botoesBloqueados.forEach(id => {
+  ["btnImportar", "btnLimpar", "btnExportar", "btnImplantar"].forEach(id => {
     const botao = document.getElementById(id);
     if (botao) {
       botao.disabled = true;
@@ -93,11 +96,9 @@ function bloquearBotoesDiretoria() {
   });
 }
 
-
-
-
-
-/* DATA */
+/* =====================================================
+   DATA DO CABEÇALHO
+===================================================== */
 function atualizarData() {
   const dataAtual = document.getElementById("dataAtual");
   if (!dataAtual) return;
@@ -110,7 +111,9 @@ function atualizarData() {
   });
 }
 
-/* IMPORTAÇÃO */
+/* =====================================================
+   IMPORTAÇÃO DAS PLANILHAS
+===================================================== */
 async function importarPlanilhas(evento) {
   const arquivos = Array.from(evento.target.files || []);
   if (!arquivos.length) return;
@@ -130,24 +133,31 @@ async function importarPlanilhas(evento) {
 
       const workbook = XLSX.read(buffer, {
         type: "array",
-        cellDates: true
+        cellDates: false
       });
 
       workbook.SheetNames.forEach(nomeAba => {
         const sheet = workbook.Sheets[nomeAba];
 
+        /*
+          IMPORTANTE:
+          raw:true mantém o valor original do Excel.
+          Assim conseguimos formatar data e hora manualmente em pt-BR.
+        */
         const dados = XLSX.utils.sheet_to_json(sheet, {
           defval: "",
-          raw: false
+          raw: true,
+          dateNF: "dd/mm/yyyy hh:mm"
         });
 
-        const normalizados = dados.map(item => normalizarObjeto(item));
+        const dadosFormatados = dados.map(linha => formatarLinhaEspelho(linha));
+        const normalizados = dadosFormatados.map(item => normalizarObjeto(item));
         const nomeNormalizado = normalizar(nomeAba);
 
         sheetsOriginais[nomeNormalizado] = {
           nomeOriginal: nomeAba,
           codigoServico: extrairCodigo(nomeAba),
-          dadosOriginais: dados,
+          dadosOriginais: dadosFormatados,
           dadosNormalizados: normalizados
         };
 
@@ -166,8 +176,10 @@ async function importarPlanilhas(evento) {
 
     atualizarDashboard();
 
-    document.getElementById("nomeArquivo").innerText =
-      `${arquivos.length} arquivo(s) importado(s) | ${todasAsAbas.length} aba(s) lida(s)`;
+    preencherTexto(
+      "nomeArquivo",
+      `${arquivos.length} arquivo(s) importado(s) | ${todasAsAbas.length} aba(s) lida(s)`
+    );
 
     alert("Planilhas importadas com sucesso!");
   } catch (erro) {
@@ -179,7 +191,118 @@ async function importarPlanilhas(evento) {
   }
 }
 
-/* GERA PAINEL */
+/* =====================================================
+   FORMATA A LINHA ORIGINAL PARA ESPELHO DA PLANILHA
+===================================================== */
+function formatarLinhaEspelho(linha) {
+  const novaLinha = {};
+
+  Object.keys(linha).forEach(coluna => {
+    const valor = linha[coluna];
+
+    if (ehCampoDataHora(coluna)) {
+      novaLinha[coluna] = formatarDataHoraBR(valor);
+    } else if (ehCampoHora(coluna)) {
+      novaLinha[coluna] = formatarHoraBR(valor);
+    } else {
+      novaLinha[coluna] = valor;
+    }
+  });
+
+  return novaLinha;
+}
+
+/* =====================================================
+   IDENTIFICA COLUNAS DE DATA E HORA
+===================================================== */
+function ehCampoDataHora(coluna) {
+  const nome = normalizar(coluna);
+
+  return (
+    nome.includes("data") ||
+    nome.includes("inicio") ||
+    nome.includes("início") ||
+    nome.includes("fim") ||
+    nome.includes("termino") ||
+    nome.includes("término")
+  );
+}
+
+function ehCampoHora(coluna) {
+  const nome = normalizar(coluna);
+
+  return (
+    nome.includes("hora") ||
+    nome.includes("tempo")
+  );
+}
+
+/* =====================================================
+   FORMATA DATA/HORA PARA PADRÃO BRASILEIRO
+===================================================== */
+function formatarDataHoraBR(valor) {
+  if (!valor) return "";
+
+  /*
+    Caso o Excel envie data como número serial.
+  */
+  if (typeof valor === "number") {
+    const data = XLSX.SSF.parse_date_code(valor);
+    if (!data) return valor;
+
+    const dia = String(data.d).padStart(2, "0");
+    const mes = String(data.m).padStart(2, "0");
+    const ano = data.y;
+    const hora = String(data.H || 0).padStart(2, "0");
+    const minuto = String(data.M || 0).padStart(2, "0");
+
+    if (hora === "00" && minuto === "00") {
+      return `${dia}/${mes}/${ano}`;
+    }
+
+    return `${dia}/${mes}/${ano} ${hora}:${minuto}`;
+  }
+
+  /*
+    Caso já esteja como texto brasileiro.
+  */
+  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(String(valor))) {
+    return valor;
+  }
+
+  const data = new Date(valor);
+
+  if (isNaN(data)) return valor;
+
+  return data.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+/* =====================================================
+   FORMATA HORAS PARA PADRÃO BRASILEIRO
+===================================================== */
+function formatarHoraBR(valor) {
+  if (!valor) return "";
+
+  if (typeof valor === "number") {
+    const totalMinutos = Math.round(valor * 24 * 60);
+    const horas = Math.floor(totalMinutos / 60);
+    const minutos = totalMinutos % 60;
+
+    return `${String(horas).padStart(2, "0")}:${String(minutos).padStart(2, "0")}`;
+  }
+
+  return valor;
+}
+
+/* =====================================================
+   GERA PAINEL EXECUTIVO
+===================================================== */
 function gerarPainelExecutivo() {
   const painel = sheetsOriginais["painel executivo"];
 
@@ -226,7 +349,9 @@ function gerarPainelExecutivo() {
   });
 }
 
-/* GERA OPERAÇÕES */
+/* =====================================================
+   GERA OPERAÇÕES
+===================================================== */
 function gerarOperacoes() {
   operacoes = [];
 
@@ -254,7 +379,9 @@ function gerarOperacoes() {
   });
 }
 
-/* ATUALIZA DASHBOARD */
+/* =====================================================
+   ATUALIZA DASHBOARD
+===================================================== */
 function atualizarDashboard() {
   renderCards();
   renderTabelaExecutiva();
@@ -267,7 +394,9 @@ function atualizarDashboard() {
   renderGraficos();
 }
 
-/* CARDS */
+/* =====================================================
+   CARDS PRINCIPAIS
+===================================================== */
 function renderCards() {
   const servicosComDados = painelExecutivo.filter(item => item.status === "Com dados").length;
 
@@ -280,7 +409,9 @@ function renderCards() {
   preencherTexto("kpiAbas", todasAsAbas.length);
 }
 
-/* TABELA EXECUTIVA */
+/* =====================================================
+   TABELA PAINEL EXECUTIVO
+===================================================== */
 function renderTabelaExecutiva() {
   const tabela = document.getElementById("tabelaPainelExecutivo");
   if (!tabela) return;
@@ -308,7 +439,9 @@ function renderTabelaExecutiva() {
   `).join("");
 }
 
-/* TABELA CONTRATUAL */
+/* =====================================================
+   TABELA CONTRATUAL
+===================================================== */
 function renderTabelaContratual() {
   const tabela = document.getElementById("tabelaContratual");
   if (!tabela) return;
@@ -330,74 +463,9 @@ function renderTabelaContratual() {
   `).join("");
 }
 
-/* RESUMO */
-function renderResumo() {
-  const resumo = document.getElementById("resumoExecutivo");
-  if (!resumo) return;
-
-  const top = [...painelExecutivo]
-    .filter(item => item.acumulado_mes > 0)
-    .sort((a, b) => b.acumulado_mes - a.acumulado_mes)
-    .slice(0, 6);
-
-  if (!top.length) {
-    resumo.innerHTML = "<p>Importe dados para gerar o resumo executivo.</p>";
-    return;
-  }
-
-  const maior = Math.max(...top.map(item => item.acumulado_mes), 1);
-
-  resumo.innerHTML = top.map(item => `
-    <div class="metric-row">
-      <strong>${item.servico}</strong>
-      <div class="bar-bg">
-        <div class="bar" style="width:${Math.min(100, item.acumulado_mes / maior * 100)}%"></div>
-      </div>
-      <b>${formatarNumero(item.acumulado_mes)}</b>
-    </div>
-  `).join("");
-}
-
-/* ALERTAS */
-function renderAlertas() {
-  const alertas = document.getElementById("alertasExecutivos");
-  if (!alertas) return;
-
-  if (!painelExecutivo.length) {
-    alertas.innerHTML = `<p><span class="badge info">Aguardando</span> Importe uma planilha.</p>`;
-    return;
-  }
-
-  const semDados = painelExecutivo.filter(item => item.status === "Sem dados");
-
-  if (!semDados.length) {
-    alertas.innerHTML = `<p><span class="badge ok">Normal</span> Sem alertas críticos.</p>`;
-    return;
-  }
-
-  alertas.innerHTML = `<p><span class="badge critico">Atenção</span> ${semDados.length} serviço(s) sem dados.</p>`;
-}
-
-/* RESPOSTAS RÁPIDAS */
-function renderPerguntas() {
-  const tabela = document.getElementById("tabelaPerguntas");
-  if (!tabela) return;
-
-  tabela.innerHTML = `
-    <tr>
-      <td>Quantos serviços possuem dados?</td>
-      <td>${painelExecutivo.filter(item => item.status === "Com dados").length}</td>
-      <td><span class="badge ok">Operacional</span></td>
-    </tr>
-    <tr>
-      <td>Quantas abas foram importadas?</td>
-      <td>${todasAsAbas.length}</td>
-      <td><span class="badge info">Sistema</span></td>
-    </tr>
-  `;
-}
-
-/* TABELA DADOS */
+/* =====================================================
+   TABELA DE DADOS GERAL
+===================================================== */
 function renderTabelaDados() {
   const tabela = document.getElementById("tabelaDados");
   if (!tabela) return;
@@ -429,7 +497,205 @@ function renderTabelaDados() {
   `).join("") || `<tr><td colspan="9">Nenhum dado encontrado.</td></tr>`;
 }
 
-/* FILTROS */
+/* =====================================================
+   DETALHE DO SERVIÇO — ESPELHO DA PLANILHA
+===================================================== */
+function renderDetalheServico(codigo) {
+  const detalhe = document.getElementById("detalheServico");
+  const aba = buscarAbaServico(codigo);
+
+  if (!aba) {
+    detalhe.innerHTML = `<div class="not-found">Serviço não encontrado.</div>`;
+    return;
+  }
+
+  const dadosPainel = painelExecutivo.find(item => item.servico === codigo);
+
+  const previsto = dadosPainel ? numero(dadosPainel.previsto_mes) : 0;
+  const executado = dadosPainel ? numero(dadosPainel.acumulado_mes) : 0;
+  const percentual = dadosPainel ? numero(dadosPainel.porcentagem_execucao) : 0;
+
+  const totalKm = aba.dadosNormalizados.reduce(
+    (soma, item) => soma + numero(item.km || item.km_total || item.km_executado),
+    0
+  );
+
+  const totalEquipes = aba.dadosNormalizados.reduce(
+    (soma, item) => soma + numero(item.equipe || item.qtd_equipe || item.qdt_equipe),
+    0
+  );
+
+  const totalViagens = aba.dadosNormalizados.reduce(
+    (soma, item) => soma + numero(item.viagens || item.qtd_viagem || item.qtd_viagens),
+    0
+  );
+
+  const totalPeso = aba.dadosNormalizados.reduce(
+    (soma, item) => soma + numero(item.peso || item.peso_total || item.peso_t),
+    0
+  );
+
+  const colunas = aba.dadosOriginais.length
+    ? Object.keys(aba.dadosOriginais[0])
+    : [];
+
+  const thead = colunas.map(col => `<th>${col}</th>`).join("");
+
+  const tbody = aba.dadosOriginais.map(linha => `
+    <tr>
+      ${colunas.map(col => `
+        <td>${linha[col] !== undefined && linha[col] !== null ? linha[col] : ""}</td>
+      `).join("")}
+    </tr>
+  `).join("");
+
+  detalhe.innerHTML = `
+    <section class="cards">
+
+      <div class="card">
+        <span>Previsto</span>
+        <strong>${formatarNumero(previsto)}</strong>
+        <small>meta operacional</small>
+      </div>
+
+      <div class="card">
+        <span>Executado</span>
+        <strong>${formatarNumero(executado)}</strong>
+        <small>acumulado realizado</small>
+      </div>
+
+      <div class="card">
+        <span>% Execução</span>
+        <strong>${formatarNumero(percentual)}%</strong>
+        <small>índice operacional</small>
+      </div>
+
+      <div class="card">
+        <span>Peso</span>
+        <strong>${formatarNumero(totalPeso)}</strong>
+        <small>toneladas</small>
+      </div>
+
+      <div class="card">
+        <span>Viagens</span>
+        <strong>${formatarNumero(totalViagens)}</strong>
+        <small>operações</small>
+      </div>
+
+      <div class="card">
+        <span>KM Executado</span>
+        <strong>${formatarNumero(totalKm)}</strong>
+        <small>quilometragem</small>
+      </div>
+
+      <div class="card">
+        <span>Equipes</span>
+        <strong>${formatarNumero(totalEquipes)}</strong>
+        <small>equipes operacionais</small>
+      </div>
+
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span>Espelho da planilha</span>
+        <h2>${codigo}</h2>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>${thead}</tr>
+          </thead>
+          <tbody>
+            ${tbody || `
+              <tr>
+                <td colspan="20">Nenhuma informação encontrada.</td>
+              </tr>
+            `}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+/* =====================================================
+   RESUMO EXECUTIVO
+===================================================== */
+function renderResumo() {
+  const resumo = document.getElementById("resumoExecutivo");
+  if (!resumo) return;
+
+  const top = [...painelExecutivo]
+    .filter(item => item.acumulado_mes > 0)
+    .sort((a, b) => b.acumulado_mes - a.acumulado_mes)
+    .slice(0, 6);
+
+  if (!top.length) {
+    resumo.innerHTML = "<p>Importe dados para gerar o resumo executivo.</p>";
+    return;
+  }
+
+  const maior = Math.max(...top.map(item => item.acumulado_mes), 1);
+
+  resumo.innerHTML = top.map(item => `
+    <div class="metric-row">
+      <strong>${item.servico}</strong>
+      <div class="bar-bg">
+        <div class="bar" style="width:${Math.min(100, item.acumulado_mes / maior * 100)}%"></div>
+      </div>
+      <b>${formatarNumero(item.acumulado_mes)}</b>
+    </div>
+  `).join("");
+}
+
+/* =====================================================
+   ALERTAS
+===================================================== */
+function renderAlertas() {
+  const alertas = document.getElementById("alertasExecutivos");
+  if (!alertas) return;
+
+  if (!painelExecutivo.length) {
+    alertas.innerHTML = `<p><span class="badge info">Aguardando</span> Importe uma planilha.</p>`;
+    return;
+  }
+
+  const semDados = painelExecutivo.filter(item => item.status === "Sem dados");
+
+  if (!semDados.length) {
+    alertas.innerHTML = `<p><span class="badge ok">Normal</span> Sem alertas críticos.</p>`;
+    return;
+  }
+
+  alertas.innerHTML = `<p><span class="badge critico">Atenção</span> ${semDados.length} serviço(s) sem dados.</p>`;
+}
+
+/* =====================================================
+   PERGUNTAS RÁPIDAS
+===================================================== */
+function renderPerguntas() {
+  const tabela = document.getElementById("tabelaPerguntas");
+  if (!tabela) return;
+
+  tabela.innerHTML = `
+    <tr>
+      <td>Quantos serviços possuem dados?</td>
+      <td>${painelExecutivo.filter(item => item.status === "Com dados").length}</td>
+      <td><span class="badge ok">Operacional</span></td>
+    </tr>
+    <tr>
+      <td>Quantas abas foram importadas?</td>
+      <td>${todasAsAbas.length}</td>
+      <td><span class="badge info">Sistema</span></td>
+    </tr>
+  `;
+}
+
+/* =====================================================
+   FILTROS
+===================================================== */
 function renderFiltros() {
   const filtroPrograma = document.getElementById("filtroPrograma");
   const filtroStatus = document.getElementById("filtroStatus");
@@ -447,7 +713,9 @@ function renderFiltros() {
   `;
 }
 
-/* GRÁFICOS */
+/* =====================================================
+   GRÁFICOS
+===================================================== */
 function renderGraficos() {
   const ctxExecucao = document.getElementById("graficoExecucao");
   const ctxPizza = document.getElementById("graficoAcumulado");
@@ -493,7 +761,9 @@ function renderGraficos() {
   });
 }
 
-/* FILTRO POR DATA */
+/* =====================================================
+   FILTRO POR DATA
+===================================================== */
 function aplicarFiltroPeriodo() {
   const data = document.getElementById("filtroDia").value;
 
@@ -506,7 +776,6 @@ function aplicarFiltroPeriodo() {
   atualizarDashboard();
 }
 
-/* LIMPAR FILTRO */
 function limparFiltroPeriodo() {
   const filtro = document.getElementById("filtroDia");
   if (filtro) filtro.value = "";
@@ -517,7 +786,9 @@ function limparFiltroPeriodo() {
   atualizarDashboard();
 }
 
-/* TELAS */
+/* =====================================================
+   TROCA DE TELAS
+===================================================== */
 function mostrarTela(nome, botao) {
   document.querySelectorAll(".tela").forEach(item => item.classList.remove("ativa"));
 
@@ -528,7 +799,9 @@ function mostrarTela(nome, botao) {
   if (botao) botao.classList.add("active");
 }
 
-/* SERVIÇOS */
+/* =====================================================
+   MOSTRAR SERVIÇO
+===================================================== */
 function mostrarServico(codigo, botao) {
   document.querySelectorAll("#tela-contrato .servico-btn").forEach(btn => btn.classList.remove("active"));
   if (botao) botao.classList.add("active");
@@ -547,101 +820,9 @@ function mostrarServico(codigo, botao) {
   renderDetalheServico(codigo);
 }
 
-/* DETALHE DO SERVIÇO */
-function renderDetalheServico(codigo) {
-  const detalhe = document.getElementById("detalheServico");
-  const aba = buscarAbaServico(codigo);
-
-  if (!aba) {
-    detalhe.innerHTML = `<div class="not-found">Serviço não encontrado.</div>`;
-    return;
-  }
-
-  const colunas = aba.dadosOriginais.length ? Object.keys(aba.dadosOriginais[0]) : [];
-
-  const thead = colunas.map(col => `<th>${col}</th>`).join("");
-
-  const tbody = aba.dadosOriginais.map(linha => `
-    <tr>
-      ${colunas.map(col => `<td>${linha[col] || ""}</td>`).join("")}
-    </tr>
-  `).join("");
-
-/* CALCULA INFORMAÇÕES DOS CARDS */
-const totalPeso = aba.dadosNormalizados.reduce(
-  (soma, item) => soma + numero(item.peso || item.peso_total || item.peso_t),
-  0
-);
-
-const totalViagens = aba.dadosNormalizados.reduce(
-  (soma, item) => soma + numero(item.viagens || item.qtd_viagem || item.qtd_viagens),
-  0
-);
-
-const totalKm = aba.dadosNormalizados.reduce(
-  (soma, item) => soma + numero(item.km || item.km_total || item.km_executado),
-  0
-);
-
-const totalEquipes = aba.dadosNormalizados.reduce(
-  (soma, item) => soma + numero(item.equipe || item.qtd_equipe || item.qdt_equipe),
-  0
-);
-
-detalhe.innerHTML = `
-
-  <!-- ======================================== -->
-  <!-- CARDS EXECUÇÃO -->
-  <!-- ======================================== -->
-  <section class="cards">
-
-    <div class="card">
-      <span>KM Executado</span>
-      <strong>${formatarNumero(totalKm)}</strong>
-      <small>quilometragem</small>
-    </div>
-
-    <div class="card">
-      <span>Equipes</span>
-      <strong>${formatarNumero(totalEquipes)}</strong>
-      <small>equipes operacionais</small>
-    </div>
-
-  </section>
-
-  <!-- ======================================== -->
-  <!-- TABELA -->
-  <!-- ======================================== -->
-  <section class="section">
-
-      <div class="section-title">
-        <span>Espelho da planilha</span>
-        <h2>${codigo}</h2>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>${thead}</tr>
-          </thead>
-
-          <tbody>
-            ${tbody || `
-              <tr>
-                <td colspan="20">
-                  Nenhuma informação encontrada.
-                </td>
-              </tr>
-            `}
-          </tbody>
-        </table>
-      </div>
-
-  </section>
-`;
-}
-
-/* KPI'S */
+/* =====================================================
+   KPI'S
+===================================================== */
 const KPIS_POR_SERVICO = {
   geral: {
     titulo: "Indicadores Gerais de Operação",
@@ -655,262 +836,11 @@ const KPIS_POR_SERVICO = {
           "Quantidade total coletada por dia.",
           "Quantidade coletada por veículo por turno."
         ]
-      },
-      {
-        titulo: "Frota e Viagens",
-        itens: [
-          "Viagens por veículo por turno.",
-          "Viagens por veículo por dia ou mês.",
-          "Capacidade real média dos veículos.",
-          "Taxa de ocupação dos veículos.",
-          "Frota ativa comparada com frota dimensionada."
-        ],
-        formula: "Taxa de ocupação = toneladas coletadas por viagem ÷ capacidade média × 100"
-      },
-      {
-        titulo: "Distância e Percurso",
-        itens: [
-          "Distância mensal total percorrida.",
-          "Distância semanal e diária média.",
-          "Distância média por viagem.",
-          "Distância média por rota ou RA."
-        ]
-      },
-      {
-        titulo: "Tempo e Produtividade",
-        itens: [
-          "Horas produtivas por veículo.",
-          "Horas de veículo parado à disposição.",
-          "Tempo médio por viagem.",
-          "Tempo médio por km rodado.",
-          "Duração de refeição comparada ao tempo de operação."
-        ]
       }
     ]
-  },
-
-  "P1": {
-    titulo: "P1 - Coleta Orgânica",
-    descricao: "Controle do peso coletado e produtividade da coleta orgânica.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Peso coletado.",
-        "Toneladas coletadas por dia.",
-        "Toneladas coletadas por turno.",
-        "Toneladas por veículo por turno.",
-        "Toneladas por viagem."
-      ],
-      formula: "Peso coletado = soma das toneladas registradas na aba P1"
-    }]
-  },
-
-  "P2.1": {
-    titulo: "P2.1 - Coleta Seletiva",
-    descricao: "Controle das viagens realizadas e viagens recebidas como orgânica.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Viagens realizadas.",
-        "Viagens recebidas como orgânica.",
-        "Controle de estouro do peso previsto.",
-        "Viagens por veículo por dia.",
-        "Produtividade por rota ou RA."
-      ],
-      formula: "Resultado = viagens realizadas + viagens recebidas como orgânica"
-    }]
-  },
-
-  "P2.2": {
-    titulo: "P2.2 - Rejeito Seletivo das IRR",
-    descricao: "Controle das viagens do rejeito seletivo.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Viagens realizadas.",
-        "Viagens recebidas como orgânica.",
-        "Controle de peso previsto.",
-        "Viagens por veículo.",
-        "Viagens por turno."
-      ],
-      formula: "Resultado = viagens realizadas + viagens recebidas como orgânica"
-    }]
-  },
-
-  "P3": {
-    titulo: "P3 - Remoção Manual",
-    descricao: "Controle da quantidade de equipes por dia.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Quantidade de equipes dia.",
-        "Equipes previstas.",
-        "Equipes em operação.",
-        "Percentual de atendimento.",
-        "Produtividade por equipe."
-      ],
-      formula: "Quantidade de equipes dia = total de equipes registradas"
-    }]
-  },
-
-  "P4": {
-    titulo: "P4 - Remoção Mecanizada",
-    descricao: "Controle do peso coletado e produtividade mecanizada.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Peso coletado.",
-        "Toneladas por viagem.",
-        "Toneladas por km rodado.",
-        "Viagens por veículo.",
-        "Distância média por viagem."
-      ],
-      formula: "Peso coletado = soma do peso registrado na aba P4"
-    }]
-  },
-
-  "P5": {
-    titulo: "P5 - Varrição Manual",
-    descricao: "Controle de quilometragem prevista, executada e índice de execução.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Quilometragem prevista.",
-        "Quilometragem executada.",
-        "Índice de execução.",
-        "Km varridos por hora.",
-        "Equipes ou varredores por km varrido."
-      ],
-      formula: "Índice de execução = quilometragem executada ÷ quilometragem prevista × 100"
-    }]
-  },
-
-  "P6": {
-    titulo: "P6 - Varrição Mecanizada",
-    descricao: "Controle da quilometragem mecanizada executada.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Quilometragem prevista.",
-        "Quilometragem executada.",
-        "Índice de execução.",
-        "Km por hora.",
-        "Velocidade média operacional."
-      ],
-      formula: "Índice de execução = km executado ÷ km previsto × 100"
-    }]
-  },
-
-  "P7": {
-    titulo: "P7 - Lavagem de Vias e Logradouros",
-    descricao: "Controle das equipes previstas e equipes em operação.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Equipes previstas.",
-        "Equipes em operação.",
-        "Percentual de execução.",
-        "Horas produtivas.",
-        "Produtividade por equipe."
-      ],
-      formula: "Execução = equipes em operação ÷ equipes previstas × 100"
-    }]
-  },
-
-  "P8": {
-    titulo: "P8 - Limpeza de Equipamentos e Bens",
-    descricao: "Controle das equipes de limpeza de equipamentos e bens.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Equipes previstas.",
-        "Equipes em operação.",
-        "Locais atendidos.",
-        "Produtividade por equipe.",
-        "Percentual de atendimento."
-      ],
-      formula: "Execução = equipes em operação ÷ equipes previstas × 100"
-    }]
-  },
-
-  "P9": {
-    titulo: "P9 - Catação",
-    descricao: "Controle das equipes de catação.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Equipes previstas.",
-        "Equipes em operação.",
-        "Áreas atendidas.",
-        "Produtividade por equipe.",
-        "Percentual de execução."
-      ],
-      formula: "Execução = equipes em operação ÷ equipes previstas × 100"
-    }]
-  },
-
-  "P10": {
-    titulo: "P10 - Pintura Mecanizada",
-    descricao: "Controle das equipes de pintura mecanizada.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Equipes previstas.",
-        "Equipes em operação.",
-        "Índice de execução.",
-        "Produtividade por equipe.",
-        "Atendimento por rota ou área."
-      ],
-      formula: "Execução = equipes em operação ÷ equipes previstas × 100"
-    }]
-  },
-
-  "P11": {
-    titulo: "P11 - Limpeza Pós-Eventos e Coleta de Gordura",
-    descricao: "Controle de equipes em serviços especiais.",
-    blocos: [
-      {
-        titulo: "Limpeza Pós-Eventos",
-        itens: [
-          "Equipes previstas.",
-          "Equipes em operação.",
-          "Eventos atendidos.",
-          "Tempo médio de atendimento.",
-          "Produtividade por equipe."
-        ]
-      },
-      {
-        titulo: "Coleta de Gordura",
-        itens: [
-          "Equipes previstas.",
-          "Equipes em operação.",
-          "Demandas atendidas.",
-          "Tempo médio de operação.",
-          "Percentual de execução."
-        ],
-        formula: "Execução = equipes em operação ÷ equipes previstas × 100"
-      }
-    ]
-  },
-
-  "P12": {
-    titulo: "P12 - Transbordo",
-    descricao: "Controle de peso coletado por distrito e km percorrido.",
-    blocos: [{
-      titulo: "Respostas do Serviço",
-      itens: [
-        "Peso coletado por distrito.",
-        "Km percorrido por distrito.",
-        "Toneladas por km.",
-        "Viagens por distrito.",
-        "Distância média por viagem."
-      ],
-      formula: "Resultado = peso coletado por distrito × km percorrido por distrito"
-    }]
   }
 };
 
-/* MOSTRAR KPI */
 function mostrarKPI(codigo, botao) {
   document.querySelectorAll("#tela-kpi .servico-btn").forEach(btn => btn.classList.remove("active"));
   if (botao) botao.classList.add("active");
@@ -946,7 +876,9 @@ function mostrarKPI(codigo, botao) {
   `;
 }
 
-/* FUNÇÕES AUXILIARES */
+/* =====================================================
+   FUNÇÕES AUXILIARES
+===================================================== */
 function buscarAbaServico(codigo) {
   for (const nome in sheetsOriginais) {
     const aba = sheetsOriginais[nome];
@@ -1033,15 +965,15 @@ function normalizarData(valor) {
 
   const texto = String(valor).trim();
 
-  if (/^\d{4}-\d{2}-\d{2}/.test(texto)) return texto.slice(0, 10);
-
-  const br = texto.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  const br = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
 
   if (br) {
     const dia = br[1].padStart(2, "0");
     const mes = br[2].padStart(2, "0");
     let ano = br[3];
+
     if (ano.length === 2) ano = "20" + ano;
+
     return `${ano}-${mes}-${dia}`;
   }
 
@@ -1087,272 +1019,4 @@ function formatarMoeda(valor) {
 function preencherTexto(id, texto) {
   const elemento = document.getElementById(id);
   if (elemento) elemento.innerText = texto;
-}
-/* ========================================================
-   DETALHE DO SERVIÇO COM CARDS EXECUTIVOS
-   P1 A P12
-======================================================== */
-function renderDetalheServico(codigo) {
-
-  const detalhe =
-    document.getElementById("detalheServico");
-
-  const aba =
-    buscarAbaServico(codigo);
-
-  if (!aba) {
-
-    detalhe.innerHTML = `
-      <div class="not-found">
-        Serviço não encontrado.
-      </div>
-    `;
-
-    return;
-  }
-
-  /* ==========================================
-     LOCALIZA DADOS DO PAINEL EXECUTIVO
-  ========================================== */
-  const dadosPainel =
-    painelExecutivo.find(
-      item => item.servico === codigo
-    );
-
-  /* ==========================================
-     PREVISTO
-  ========================================== */
-  const previsto =
-    dadosPainel
-      ? numero(dadosPainel.previsto_mes)
-      : 0;
-
-  /* ==========================================
-     EXECUTADO
-  ========================================== */
-  const executado =
-    dadosPainel
-      ? numero(dadosPainel.acumulado_mes)
-      : 0;
-
-  /* ==========================================
-     EXECUÇÃO %
-  ========================================== */
-  const percentual =
-    dadosPainel
-      ? numero(dadosPainel.porcentagem_execucao)
-      : 0;
-
-  /* ==========================================
-     VALOR TOTAL
-  ========================================== */
-  const valor =
-    dadosPainel
-      ? numero(dadosPainel.valor)
-      : 0;
-
-  /* ==========================================
-     KM TOTAL
-  ========================================== */
-  const totalKm =
-    aba.dadosNormalizados.reduce(
-      (soma, item) =>
-        soma + numero(
-          item.km ||
-          item.km_total ||
-          item.km_executado
-        ),
-      0
-    );
-
-  /* ==========================================
-     TOTAL EQUIPES
-  ========================================== */
-  const totalEquipes =
-    aba.dadosNormalizados.reduce(
-      (soma, item) =>
-        soma + numero(
-          item.equipe ||
-          item.qtd_equipe ||
-          item.qdt_equipe
-        ),
-      0
-    );
-
-  /* ==========================================
-     TOTAL VIAGENS
-  ========================================== */
-  const totalViagens =
-    aba.dadosNormalizados.reduce(
-      (soma, item) =>
-        soma + numero(
-          item.viagens ||
-          item.qtd_viagem ||
-          item.qtd_viagens
-        ),
-      0
-    );
-
-  /* ==========================================
-     TOTAL PESO
-  ========================================== */
-  const totalPeso =
-    aba.dadosNormalizados.reduce(
-      (soma, item) =>
-        soma + numero(
-          item.peso ||
-          item.peso_total ||
-          item.peso_t
-        ),
-      0
-    );
-
-  /* ==========================================
-     COLUNAS TABELA
-  ========================================== */
-  const colunas =
-    aba.dadosOriginais.length
-      ? Object.keys(
-          aba.dadosOriginais[0]
-        )
-      : [];
-
-  const thead =
-    colunas.map(col =>
-      `<th>${col}</th>`
-    ).join("");
-
-  const tbody =
-    aba.dadosOriginais.map(linha => `
-      <tr>
-        ${colunas.map(col => `
-          <td>${linha[col] || ""}</td>
-        `).join("")}
-      </tr>
-    `).join("");
-
-  /* ==========================================
-     HTML FINAL
-  ========================================== */
-  detalhe.innerHTML = `
-
-    <!-- ===================================== -->
-    <!-- CARDS EXECUTIVOS -->
-    <!-- ===================================== -->
-    <section class="cards">
-
-      <!-- PREVISTO -->
-      <div class="card">
-        <span>Previsto</span>
-
-        <strong>
-          ${formatarNumero(previsto)}
-        </strong>
-
-        <small>meta operacional</small>
-      </div>
-
-      <!-- EXECUTADO -->
-      <div class="card">
-        <span>Executado</span>
-
-        <strong>
-          ${formatarNumero(executado)}
-        </strong>
-
-        <small>acumulado realizado</small>
-      </div>
-
-      <!-- EXECUÇÃO -->
-      <div class="card">
-        <span>% Execução</span>
-
-        <strong>
-          ${formatarNumero(percentual)}%
-        </strong>
-
-        <small>índice operacional</small>
-      </div>
-
-      <div class="card">
-        <strong>
-          ${formatarNumero(totalPeso)}
-        </strong>
-
-        <small>toneladas</small>
-      </div>
-
-      <!-- VIAGENS -->
-      <div class="card">
-        <span>Viagens</span>
-
-        <strong>
-          ${formatarNumero(totalViagens)}
-        </strong>
-
-        <small>operações</small>
-      </div>
-
-      <!-- KM -->
-      <div class="card">
-        <span>KM Executado</span>
-
-        <strong>
-          ${formatarNumero(totalKm)}
-        </strong>
-
-        <small>quilometragem</small>
-      </div>
-
-      <!-- EQUIPES -->
-      <div class="card">
-        <span>Equipes</span>
-
-        <strong>
-          ${formatarNumero(totalEquipes)}
-        </strong>
-
-        <small>equipes operacionais</small>
-      </div>
-
-    </section>
-
-    <!-- ===================================== -->
-    <!-- TABELA -->
-    <!-- ===================================== -->
-    <section class="section">
-
-      <div class="section-title">
-        <span>Espelho da planilha</span>
-        <h2>${codigo}</h2>
-      </div>
-
-      <div class="table-wrap">
-
-        <table>
-
-          <thead>
-            <tr>
-              ${thead}
-            </tr>
-          </thead>
-
-          <tbody>
-
-            ${tbody || `
-              <tr>
-                <td colspan="20">
-                  Nenhuma informação encontrada.
-                </td>
-              </tr>
-            `}
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-    </section>
-  `;
 }
